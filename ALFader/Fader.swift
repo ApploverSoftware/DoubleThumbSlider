@@ -8,18 +8,47 @@
 
 import UIKit
 
-protocol FaderDelegate {
+protocol FaderDelegate: class {
     func rangeDidChage(left: CGFloat, right: CGFloat)
 }
 
 final class Fader: UIView {
-    let circleRadius: CGFloat = 40
+    let circleRadius: CGFloat = 25
     let leftCircleBackgroundColor = UIColor.orange
     let rightCircleBackgroundColor = UIColor.orange
     
-    let lineHeight: CGFloat = 10
-    let backgroundLineColor = UIColor.gray
-    let rangeLineColor = UIColor.orange
+    var minValue: CGFloat = 0 {
+        didSet {
+            faderRange = (minValue, maxValue)
+        }
+    }
+    
+    var maxValue: CGFloat = 24 {
+        didSet {
+            faderRange = (minValue, maxValue)
+        }
+    }
+    
+    var lineHeight: CGFloat = 10
+    var backgroundLineColor = UIColor(red: 0.84, green: 0.84, blue: 0.84, alpha: 1.00) {
+        didSet {
+            backgroundLine.backgroundColor = backgroundLineColor
+        }
+    }
+    
+    var rangeLineColor = UIColor.orange {
+        didSet {
+            insideRangeView.backgroundColor = rangeLineColor
+            leftOutsideRangeView.backgroundColor = rangeLineColor
+            rightOutsideRangeView.backgroundColor = rangeLineColor
+        }
+    }
+    
+    override var frame: CGRect {
+        didSet {
+            configFader()
+        }
+    }
     
     // Background line
     private let backgroundLine = UIView()
@@ -29,24 +58,156 @@ final class Fader: UIView {
     private let leftOutsideRangeView = UIView()
     private let rightOutsideRangeView = UIView()
     
-    var delegate: FaderDelegate?
+    weak var delegate: FaderDelegate? {
+        didSet { // To notify init values
+            delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
+        }
+    }
     
     private let leftCircle = UIView()
-    private var leftCircleXPos: CGFloat = 0.0 {
+    fileprivate var leftCircleXPos: CGFloat = 0.0 {
         didSet {
             leftCircle.center.x = leftCircleXPos
-            selectedRange.leftXValue = newRangeValue(for: leftCircleXPos)
+            faderRange.leftXValue = newRangeValue(for: leftCircleXPos)
             refreshRangeDrawing()
         }
     }
     
     private let rightCircle = UIView()
-    private var rightCircleXPos: CGFloat = 0.0 {
+    fileprivate var rightCircleXPos: CGFloat = 0.0 {
         didSet {
             rightCircle.center.x = rightCircleXPos
-            selectedRange.rightXValue = newRangeValue(for: rightCircleXPos)
+            faderRange.rightXValue = newRangeValue(for: rightCircleXPos)
             refreshRangeDrawing()
         }
+    }
+    
+    private func newRangeValue(for circleXPosition: CGFloat) -> CGFloat {
+        let values = maxValue - minValue
+        let rangeWithPadding = frame.width - circleRadius * 2
+        let startShift = minValue * (rangeWithPadding / values)
+        let newValue = (startShift + (circleXPosition - circleRadius)) / (rangeWithPadding / values)
+        return newValue.rounded(FloatingPointRoundingRule.toNearestOrEven)
+    }
+    
+    // Normalized to range from 0 to 1 for both values
+    var faderRange: (leftXValue: CGFloat, rightXValue: CGFloat) {
+        didSet {
+            if faderRange.leftXValue > faderRange.rightXValue {
+                rangeState = .outside
+            } else {
+                rangeState = .inside
+            }
+            
+            delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
+        }
+    }
+    
+    private var rangeState: RangeState = .inside
+    enum RangeState {
+        case inside
+        case outside
+    }
+    
+    private var circleHandledByPanGesture: HandledCircle = .none
+    enum HandledCircle {
+        case left
+        case right
+        case none
+    }
+    
+    override init(frame: CGRect) {
+        faderRange = (minValue, maxValue)
+        super.init(frame: frame)
+        configFader()
+        configPanGesture()
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        faderRange = (minValue, maxValue)
+        super.init(coder: aDecoder)
+        configFader()
+        configPanGesture()
+    }
+    
+    private func configFader() {
+        subviews.forEach { $0.removeFromSuperview() }
+        
+        // Background line
+        backgroundLine.frame = CGRect(
+            x: 0,
+            y: (frame.height - lineHeight) / 2,
+            width: frame.width,
+            height: lineHeight)
+        backgroundLine.backgroundColor = backgroundLineColor
+        backgroundLine.layer.cornerRadius = lineHeight / 2
+        backgroundLine.layer.borderWidth = 0.5
+        backgroundLine.layer.borderColor = backgroundLineColor.darker(by: 10)?.cgColor
+        addSubview(backgroundLine)
+        
+        // Inside range
+        insideRangeView.frame = CGRect(
+            x: leftCircle.center.x,
+            y: (frame.height - lineHeight) / 2,
+            width: rightCircle.center.x - leftCircle.center.x,
+            height: lineHeight)
+        insideRangeView.backgroundColor = rangeLineColor
+        insideRangeView.layer.cornerRadius = lineHeight / 2
+        insideRangeView.layer.borderWidth = 0.5
+        insideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
+        addSubview(insideRangeView)
+        
+        // Left outside range
+        leftOutsideRangeView.frame = CGRect(
+            x: 0,
+            y: (frame.height - lineHeight) / 2,
+            width: rightCircle.center.x,
+            height: lineHeight)
+        leftOutsideRangeView.isHidden = true
+        leftOutsideRangeView.backgroundColor = rangeLineColor
+        leftOutsideRangeView.layer.cornerRadius = lineHeight / 2
+        leftOutsideRangeView.layer.borderWidth = 0.5
+        leftOutsideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
+        addSubview(leftOutsideRangeView)
+        
+        // Right outside range
+        rightOutsideRangeView.frame = CGRect(
+            x: leftCircle.center.x,
+            y: (frame.height - lineHeight) / 2,
+            width: frame.width - leftCircle.center.x,
+            height: lineHeight)
+        rightOutsideRangeView.isHidden = true
+        rightOutsideRangeView.backgroundColor = rangeLineColor
+        rightOutsideRangeView.layer.cornerRadius = lineHeight / 2
+        rightOutsideRangeView.layer.borderWidth = 0.5
+        rightOutsideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
+        addSubview(rightOutsideRangeView)
+        
+        // Left circle
+        leftCircle.frame = CGRect(
+            x: 0,
+            y: (frame.height - (circleRadius * 2)) / 2,
+            width: circleRadius * 2,
+            height: circleRadius * 2)
+        leftCircle.layer.cornerRadius = circleRadius
+        leftCircle.backgroundColor = leftCircleBackgroundColor
+        leftCircle.layer.borderWidth = 0.5
+        leftCircle.layer.borderColor = leftCircleBackgroundColor.darker(by: 10)?.cgColor
+        addSubview(leftCircle)
+        
+        // Right circle
+        rightCircle.frame = CGRect(
+            x: frame.width - circleRadius * 2,
+            y: (frame.height - (circleRadius * 2)) / 2,
+            width: circleRadius * 2,
+            height: circleRadius * 2)
+        rightCircle.layer.cornerRadius = circleRadius
+        rightCircle.backgroundColor = rightCircleBackgroundColor
+        rightCircle.layer.borderWidth = 0.5
+        rightCircle.layer.borderColor = rightCircleBackgroundColor.darker(by: 10)?.cgColor
+        addSubview(rightCircle)
+        
+        refreshRangeDrawing()
     }
     
     private func refreshRangeDrawing() {
@@ -68,124 +229,13 @@ final class Fader: UIView {
         }
     }
     
-    fileprivate func newRangeValue(for circleXPosition: CGFloat) -> CGFloat {
-        return (circleXPosition - circleRadius) / (frame.width - circleRadius * 2)
-    }
-    
-    // Normalized value to range in both from 0 to 1
-    var selectedRange: (leftXValue: CGFloat, rightXValue: CGFloat) = (0, 1) {
-        didSet {
-            if selectedRange.leftXValue > selectedRange.rightXValue {
-                rangeState = .outside
-            } else {
-                rangeState = .inside
-            }
-            
-            delegate?.rangeDidChage(left: selectedRange.leftXValue, right: selectedRange.rightXValue)
-            debugPrint(selectedRange, "New range value")
-        }
-    }
-    
-    private var rangeState: RangeState = .inside
-    
-    enum RangeState {
-        case inside
-        case outside
-    }
-    
-    private var circleHandledByPanGesture: HandledCircle = .none
-    
-    enum HandledCircle {
-        case left
-        case right
-        case none
-    }
-    
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        configFader()
-        configPanGesture()
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
-        configFader()
-        configPanGesture()
-    }
-    
-    private func configFader() {
-        // Background line
-        backgroundLine.frame = CGRect(
-            x: 0,
-            y: (frame.height - lineHeight) / 2,
-            width: frame.width,
-            height: lineHeight)
-        backgroundLine.backgroundColor = backgroundLineColor
-        backgroundLine.layer.cornerRadius = lineHeight / 2
-        addSubview(backgroundLine)
-        
-        // Inside range
-        insideRangeView.frame = CGRect(
-            x: leftCircle.center.x,
-            y: (frame.height - lineHeight) / 2,
-            width: rightCircle.center.x - leftCircle.center.x,
-            height: lineHeight)
-        insideRangeView.backgroundColor = rangeLineColor
-        insideRangeView.layer.cornerRadius = lineHeight / 2
-        addSubview(insideRangeView)
-        
-        // Left outside range
-        leftOutsideRangeView.frame = CGRect(
-            x: 0,
-            y: (frame.height - lineHeight) / 2,
-            width: rightCircle.center.x,
-            height: lineHeight)
-        leftOutsideRangeView.isHidden = true
-        leftOutsideRangeView.backgroundColor = rangeLineColor
-        leftOutsideRangeView.layer.cornerRadius = lineHeight / 2
-        addSubview(leftOutsideRangeView)
-        
-        // Right outside range
-        rightOutsideRangeView.frame = CGRect(
-            x: leftCircle.center.x,
-            y: (frame.height - lineHeight) / 2,
-            width: frame.width - leftCircle.center.x,
-            height: lineHeight)
-        rightOutsideRangeView.isHidden = true
-        rightOutsideRangeView.backgroundColor = rangeLineColor
-        rightOutsideRangeView.layer.cornerRadius = lineHeight / 2
-        addSubview(rightOutsideRangeView)
-        
-        // Left circle
-        leftCircle.frame = CGRect(
-            x: 0,
-            y: (frame.height - (circleRadius * 2)) / 2,
-            width: circleRadius * 2,
-            height: circleRadius * 2)
-        leftCircle.layer.cornerRadius = circleRadius
-        leftCircle.backgroundColor = leftCircleBackgroundColor
-        addSubview(leftCircle)
-        
-        // Right circle
-        rightCircle.frame = CGRect(
-            x: frame.width - circleRadius * 2,
-            y: (frame.height - (circleRadius * 2)) / 2,
-            width: circleRadius * 2,
-            height: circleRadius * 2)
-        rightCircle.layer.cornerRadius = circleRadius
-        rightCircle.backgroundColor = rightCircleBackgroundColor
-        addSubview(rightCircle)
-        
-        refreshRangeDrawing()
-    }
-    
     private func configPanGesture() {
         let action = #selector(handlePanGesture(_:))
         let panGesture = UIPanGestureRecognizer(target: self, action: action)
         addGestureRecognizer(panGesture)
     }
     
-    private var offsetToCenterOfCircle: CGFloat = 0.0
+    fileprivate var offsetToCenterOfCircle: CGFloat = 0.0
     
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
         let state = gesture.state
@@ -250,7 +300,29 @@ extension Fader {
     }
 }
 
-extension CGPoint {
+private extension UIColor {
+    func lighter(by percentage:CGFloat=30.0) -> UIColor? {
+        return self.adjust(by: abs(percentage) )
+    }
+    
+    func darker(by percentage:CGFloat=30.0) -> UIColor? {
+        return self.adjust(by: -1 * abs(percentage) )
+    }
+    
+    func adjust(by percentage:CGFloat=30.0) -> UIColor? {
+        var r:CGFloat=0, g:CGFloat=0, b:CGFloat=0, a:CGFloat=0;
+        if(self.getRed(&r, green: &g, blue: &b, alpha: &a)){
+            return UIColor(red: min(r + percentage/100, 1.0),
+                           green: min(g + percentage/100, 1.0),
+                           blue: min(b + percentage/100, 1.0),
+                           alpha: a)
+        }else{
+            return nil
+        }
+    }
+}
+
+private extension CGPoint {
     static func + (lhs: CGPoint, rhs: CGPoint) -> CGPoint {
         return CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y)
     }
@@ -259,3 +331,4 @@ extension CGPoint {
         return CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
     }
 }
+
