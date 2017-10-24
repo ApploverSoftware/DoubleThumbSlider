@@ -12,13 +12,16 @@ class ViewController: UIViewController, FaderDelegate {
     let label1 = UILabel()
     let label2 = UILabel()
     
+    let fader = Fader(frame: UIScreen.main.bounds.insetBy(dx: 32, dy: UIScreen.main.bounds.height / 2.3))
     
     override func viewDidLoad() {
         super.viewDidLoad()
         label1.frame = CGRect(x: 0, y: 0, width: 400, height: 50)
         label2.frame = CGRect(x: 0, y: 50, width: 400, height: 50)
-        let fader = Fader(frame: UIScreen.main.bounds.insetBy(dx: 32, dy: UIScreen.main.bounds.height / 2.3))
+        
         fader.delegate = self
+        fader.initLeftValue = 24
+        fader.initRightValue = 7
         view.addSubview(fader)
         view.addSubview(label1)
         view.addSubview(label2)

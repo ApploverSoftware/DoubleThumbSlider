@@ -13,29 +13,80 @@ protocol FaderDelegate: class {
 }
 
 final class Fader: UIView {
-    let circleRadius: CGFloat = 25
-    let leftCircleBackgroundColor = UIColor.orange
-    let rightCircleBackgroundColor = UIColor.orange
+    // Thumbs corner radius
+    var thumbRadius: CGFloat = 25 {
+        didSet {
+            configLeftThumb()
+            configRightThumb()
+        }
+    }
     
+    // Color of left thumb
+    var leftThumbBackgroundColor = UIColor.orange {
+        didSet {
+            leftThumb.backgroundColor = leftThumbBackgroundColor
+        }
+    }
+    
+    // Color of right thumb
+    var rightThumbBackgroundColor = UIColor.orange {
+        didSet {
+            rightThumb.backgroundColor = rightThumbBackgroundColor
+        }
+    }
+    
+    // Min value (most left)
     var minValue: CGFloat = 0 {
         didSet {
             faderRange = (minValue, maxValue)
         }
     }
     
+    // Max value (most right)
     var maxValue: CGFloat = 24 {
         didSet {
             faderRange = (minValue, maxValue)
         }
     }
     
-    var lineHeight: CGFloat = 10
+    // Init value for left thumb in depends of min - max
+    var initLeftValue: CGFloat = 0 {
+        didSet {
+            let values = maxValue - minValue
+            let rangeWithPadding = frame.width - thumbRadius * 2
+            let startShift = thumbRadius + initLeftValue * (rangeWithPadding / values)
+            leftThumbXPos = computeNewXValue(for: startShift) ?? leftThumbXPos
+        }
+    }
+    
+    // Init value for right thumb in depends of min - max
+    var initRightValue: CGFloat = 0 {
+        didSet {
+            let values = maxValue - minValue
+            let rangeWithPadding = frame.width - thumbRadius * 2
+            let startShift = thumbRadius + initRightValue * (rangeWithPadding / values)
+            rightThumbXPos = computeNewXValue(for: startShift) ?? rightThumbXPos
+        }
+    }
+    
+    // Height of fader
+    var lineHeight: CGFloat = 10 {
+        didSet {
+            configBackgroundLine()
+            configRightOutsideRange()
+            configLeftOutsideRange()
+            configInsideRange()
+        }
+    }
+    
+    // Color of view which represents whole fader
     var backgroundLineColor = UIColor(red: 0.84, green: 0.84, blue: 0.84, alpha: 1.00) {
         didSet {
             backgroundLine.backgroundColor = backgroundLineColor
         }
     }
     
+    // Color of view which indicate selected user value
     var rangeLineColor = UIColor.orange {
         didSet {
             insideRangeView.backgroundColor = rangeLineColor
@@ -44,9 +95,17 @@ final class Fader: UIView {
         }
     }
     
+    // Overriden frame, need to refresh content when user
+    // decided to set frame after he created an instance of object
     override var frame: CGRect {
         didSet {
-            configFader()
+            configBackgroundLine()
+            configInsideRange()
+            configLeftOutsideRange()
+            configRightOutsideRange()
+            configLeftThumb()
+            configRightThumb()
+            refreshRangeDrawing()
         }
     }
     
@@ -58,36 +117,26 @@ final class Fader: UIView {
     private let leftOutsideRangeView = UIView()
     private let rightOutsideRangeView = UIView()
     
+    private let leftThumb = UIView()
+    fileprivate var leftThumbXPos: CGFloat = 0.0 {
+        didSet {
+            leftThumb.center.x = leftThumbXPos
+            faderRange.leftXValue = newRangeValue(for: leftThumbXPos)
+        }
+    }
+    
+    private let rightThumb = UIView()
+    fileprivate var rightThumbXPos: CGFloat = 0.0 {
+        didSet {
+            rightThumb.center.x = rightThumbXPos
+            faderRange.rightXValue = newRangeValue(for: rightThumbXPos)
+        }
+    }
+    
     weak var delegate: FaderDelegate? {
         didSet { // To notify init values
-            delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
+            //delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
         }
-    }
-    
-    private let leftCircle = UIView()
-    fileprivate var leftCircleXPos: CGFloat = 0.0 {
-        didSet {
-            leftCircle.center.x = leftCircleXPos
-            faderRange.leftXValue = newRangeValue(for: leftCircleXPos)
-            refreshRangeDrawing()
-        }
-    }
-    
-    private let rightCircle = UIView()
-    fileprivate var rightCircleXPos: CGFloat = 0.0 {
-        didSet {
-            rightCircle.center.x = rightCircleXPos
-            faderRange.rightXValue = newRangeValue(for: rightCircleXPos)
-            refreshRangeDrawing()
-        }
-    }
-    
-    private func newRangeValue(for circleXPosition: CGFloat) -> CGFloat {
-        let values = maxValue - minValue
-        let rangeWithPadding = frame.width - circleRadius * 2
-        let startShift = minValue * (rangeWithPadding / values)
-        let newValue = (startShift + (circleXPosition - circleRadius)) / (rangeWithPadding / values)
-        return newValue.rounded(FloatingPointRoundingRule.toNearestOrEven)
     }
     
     // Normalized to range from 0 to 1 for both values
@@ -98,7 +147,7 @@ final class Fader: UIView {
             } else {
                 rangeState = .inside
             }
-            
+            refreshRangeDrawing()
             delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
         }
     }
@@ -109,7 +158,7 @@ final class Fader: UIView {
         case outside
     }
     
-    private var circleHandledByPanGesture: HandledCircle = .none
+    private var thumbHandledByPanGesture: HandledCircle = .none
     enum HandledCircle {
         case left
         case right
@@ -131,9 +180,35 @@ final class Fader: UIView {
     }
     
     private func configFader() {
-        subviews.forEach { $0.removeFromSuperview() }
-        
         // Background line
+        configBackgroundLine()
+        addSubview(backgroundLine)
+        
+        // Inside range
+        configInsideRange()
+        addSubview(insideRangeView)
+        
+        // Left outside range
+        configLeftOutsideRange()
+        addSubview(leftOutsideRangeView)
+        
+        // Right outside range
+        configRightOutsideRange()
+        addSubview(rightOutsideRangeView)
+        
+        // Left circle
+        configLeftThumb()
+        addSubview(leftThumb)
+        
+        // Right circle
+        configRightThumb()
+        addSubview(rightThumb)
+        
+        // Adjust ranges to requirements
+        refreshRangeDrawing()
+    }
+    
+    private func configBackgroundLine() {
         backgroundLine.frame = CGRect(
             x: 0,
             y: (frame.height - lineHeight) / 2,
@@ -143,71 +218,68 @@ final class Fader: UIView {
         backgroundLine.layer.cornerRadius = lineHeight / 2
         backgroundLine.layer.borderWidth = 0.5
         backgroundLine.layer.borderColor = backgroundLineColor.darker(by: 10)?.cgColor
-        addSubview(backgroundLine)
-        
-        // Inside range
+    }
+    
+    private func configInsideRange() {
         insideRangeView.frame = CGRect(
-            x: leftCircle.center.x,
+            x: leftThumb.center.x,
             y: (frame.height - lineHeight) / 2,
-            width: rightCircle.center.x - leftCircle.center.x,
+            width: rightThumb.center.x - leftThumb.center.x,
             height: lineHeight)
         insideRangeView.backgroundColor = rangeLineColor
         insideRangeView.layer.cornerRadius = lineHeight / 2
         insideRangeView.layer.borderWidth = 0.5
         insideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
-        addSubview(insideRangeView)
-        
-        // Left outside range
+    }
+    
+    private func configLeftOutsideRange() {
         leftOutsideRangeView.frame = CGRect(
             x: 0,
             y: (frame.height - lineHeight) / 2,
-            width: rightCircle.center.x,
+            width: rightThumb.center.x,
             height: lineHeight)
         leftOutsideRangeView.isHidden = true
         leftOutsideRangeView.backgroundColor = rangeLineColor
         leftOutsideRangeView.layer.cornerRadius = lineHeight / 2
         leftOutsideRangeView.layer.borderWidth = 0.5
         leftOutsideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
-        addSubview(leftOutsideRangeView)
-        
-        // Right outside range
+    }
+    
+    private func configRightOutsideRange() {
         rightOutsideRangeView.frame = CGRect(
-            x: leftCircle.center.x,
+            x: leftThumb.center.x,
             y: (frame.height - lineHeight) / 2,
-            width: frame.width - leftCircle.center.x,
+            width: frame.width - leftThumb.center.x,
             height: lineHeight)
         rightOutsideRangeView.isHidden = true
         rightOutsideRangeView.backgroundColor = rangeLineColor
         rightOutsideRangeView.layer.cornerRadius = lineHeight / 2
         rightOutsideRangeView.layer.borderWidth = 0.5
         rightOutsideRangeView.layer.borderColor = rangeLineColor.darker(by: 10)?.cgColor
-        addSubview(rightOutsideRangeView)
-        
-        // Left circle
-        leftCircle.frame = CGRect(
+    }
+    
+    private func configLeftThumb() {
+        leftThumb.frame = CGRect(
             x: 0,
-            y: (frame.height - (circleRadius * 2)) / 2,
-            width: circleRadius * 2,
-            height: circleRadius * 2)
-        leftCircle.layer.cornerRadius = circleRadius
-        leftCircle.backgroundColor = leftCircleBackgroundColor
-        leftCircle.layer.borderWidth = 0.5
-        leftCircle.layer.borderColor = leftCircleBackgroundColor.darker(by: 10)?.cgColor
-        addSubview(leftCircle)
-        
-        // Right circle
-        rightCircle.frame = CGRect(
-            x: frame.width - circleRadius * 2,
-            y: (frame.height - (circleRadius * 2)) / 2,
-            width: circleRadius * 2,
-            height: circleRadius * 2)
-        rightCircle.layer.cornerRadius = circleRadius
-        rightCircle.backgroundColor = rightCircleBackgroundColor
-        rightCircle.layer.borderWidth = 0.5
-        rightCircle.layer.borderColor = rightCircleBackgroundColor.darker(by: 10)?.cgColor
-        addSubview(rightCircle)
-        
-        refreshRangeDrawing()
+            y: (frame.height - (thumbRadius * 2)) / 2,
+            width: thumbRadius * 2,
+            height: thumbRadius * 2)
+        leftThumb.layer.cornerRadius = thumbRadius
+        leftThumb.backgroundColor = leftThumbBackgroundColor
+        leftThumb.layer.borderWidth = 0.5
+        leftThumb.layer.borderColor = leftThumbBackgroundColor.darker(by: 10)?.cgColor
+    }
+    
+    private func configRightThumb() {
+        rightThumb.frame = CGRect(
+            x: frame.width - thumbRadius * 2,
+            y: (frame.height - (thumbRadius * 2)) / 2,
+            width: thumbRadius * 2,
+            height: thumbRadius * 2)
+        rightThumb.layer.cornerRadius = thumbRadius
+        rightThumb.backgroundColor = rightThumbBackgroundColor
+        rightThumb.layer.borderWidth = 0.5
+        rightThumb.layer.borderColor = rightThumbBackgroundColor.darker(by: 10)?.cgColor
     }
     
     private func refreshRangeDrawing() {
@@ -216,16 +288,17 @@ final class Fader: UIView {
             leftOutsideRangeView.isHidden = true
             rightOutsideRangeView.isHidden = true
             
-            insideRangeView.frame.origin.x = leftCircle.center.x
-            insideRangeView.frame.size.width = rightCircle.center.x - leftCircle.center.x
+            insideRangeView.frame.origin.x = leftThumb.center.x
+            insideRangeView.frame.size.width = rightThumb.center.x - leftThumb.center.x
         } else {
             insideRangeView.isHidden = true
             leftOutsideRangeView.isHidden = false
             rightOutsideRangeView.isHidden = false
             
-            leftOutsideRangeView.frame.size.width = rightCircle.center.x
-            rightOutsideRangeView.frame.origin.x = leftCircle.center.x
-            rightOutsideRangeView.frame.size.width = frame.width - leftCircle.center.x
+            leftOutsideRangeView.frame.origin.x = 0
+            leftOutsideRangeView.frame.size.width = rightThumb.center.x
+            rightOutsideRangeView.frame.origin.x = leftThumb.center.x
+            rightOutsideRangeView.frame.size.width = frame.width - leftThumb.center.x
         }
     }
     
@@ -245,55 +318,73 @@ final class Fader: UIView {
             let locationInFader = gesture.location(in: self)
             
             if handledLeftCircle(point: locationInFader) {
-                offsetToCenterOfCircle = (locationInFader - leftCircle.center).x
-                circleHandledByPanGesture = .left
+                offsetToCenterOfCircle = (locationInFader - leftThumb.center).x
+                thumbHandledByPanGesture = .left
             } else if handledRightCircle(point: locationInFader) {
-                offsetToCenterOfCircle = (locationInFader - rightCircle.center).x
-                circleHandledByPanGesture = .right
+                offsetToCenterOfCircle = (locationInFader - rightThumb.center).x
+                thumbHandledByPanGesture = .right
             } else {
-                circleHandledByPanGesture = .none
+                thumbHandledByPanGesture = .none
             }
         case .changed:
             let newFingerXPos = gesture.location(in: self).x
             
-            if circleHandledByPanGesture == .left {
+            if thumbHandledByPanGesture == .left {
                 handleLeftCircleChange(for: newFingerXPos)
-            } else if circleHandledByPanGesture == .right {
+            } else if thumbHandledByPanGesture == .right {
                 handleRightCircleChange(for: newFingerXPos)
             }
         case .ended, .cancelled:
-            circleHandledByPanGesture = .none
+            thumbHandledByPanGesture = .none
         default: break
         }
     }
     
+    private func newRangeValue(for circleXPosition: CGFloat) -> CGFloat {
+        let values = maxValue - minValue
+        let rangeWithPadding = frame.width - thumbRadius * 2
+        let startShift = minValue * (rangeWithPadding / values)
+        let newValue = (startShift + (circleXPosition - thumbRadius)) / (rangeWithPadding / values)
+        return newValue.rounded(FloatingPointRoundingRule.toNearestOrEven)
+    }
+    
+    
+    /// Set start values in depends of given range
+    ///
+    /// - Parameters:
+    ///   - left: Left thumb position
+    ///   - right: Right thumb position
+    func startValues(left: CGFloat, right: CGFloat) {
+        
+    }
+    
     private func handledLeftCircle(point: CGPoint) -> Bool {
-        return leftCircle.frame.contains(point)
+        return leftThumb.frame.insetBy(dx: -20, dy: -20).contains(point)
     }
     
     private func handledRightCircle(point: CGPoint) -> Bool {
-        return rightCircle.frame.contains(point)
+        return rightThumb.frame.insetBy(dx: -20, dy: -20).contains(point)
     }
 }
 
 // MARK: Function to compute new value for particular circle x pos
 extension Fader {
     fileprivate func handleLeftCircleChange(for newFingerXPos: CGFloat) {
-        leftCircleXPos = computeNewXValue(for: newFingerXPos) ?? leftCircleXPos
+        leftThumbXPos = computeNewXValue(for: newFingerXPos) ?? leftThumbXPos
     }
     
     fileprivate func handleRightCircleChange(for newFingerXPos: CGFloat) {
-        rightCircleXPos = computeNewXValue(for: newFingerXPos) ?? rightCircleXPos
+        rightThumbXPos = computeNewXValue(for: newFingerXPos) ?? rightThumbXPos
     }
     
-    private func computeNewXValue(for fingerXPos: CGFloat) -> CGFloat? {
+    fileprivate func computeNewXValue(for fingerXPos: CGFloat) -> CGFloat? {
         let newXPosition = fingerXPos - offsetToCenterOfCircle
-        if newXPosition > circleRadius && newXPosition < frame.width - circleRadius {
+        if newXPosition > thumbRadius && newXPosition < frame.width - thumbRadius {
             return newXPosition
-        } else if newXPosition < circleRadius {
-            return circleRadius
-        } else if newXPosition > frame.width - circleRadius {
-            return frame.width - circleRadius
+        } else if newXPosition <= thumbRadius {
+            return thumbRadius
+        } else if newXPosition >= frame.width - thumbRadius {
+            return frame.width - thumbRadius
         } else {
             return nil
         }
@@ -331,4 +422,5 @@ private extension CGPoint {
         return CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
     }
 }
+
 
