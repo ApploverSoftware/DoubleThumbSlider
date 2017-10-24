@@ -135,7 +135,7 @@ final class Fader: UIView {
     
     weak var delegate: FaderDelegate? {
         didSet { // To notify init values
-            //delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
+            delegate?.rangeDidChage(left: faderRange.leftXValue, right: faderRange.rightXValue)
         }
     }
     
